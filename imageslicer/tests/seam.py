@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import tqdm
 import threading
+import os.path as path
 
 THRESHOLD = 100
 
@@ -76,19 +77,23 @@ class SeamTestCase(unittest.TestCase):
         raw = imageio.imread("/home/mathmada/Downloads/9200168_Yabusame - Ritterspiele (1).jpg")
 
         bounds = crop_image_threaded(raw, 230, 0.2)
-        # bounds = [271, 34632, 47, 1509]
         raw = raw[bounds[2]:bounds[3], bounds[0]:bounds[1], :].copy()
 
-        print("Starting slicing...")
-        images, rest = imageslicer.core.slice(raw,
-                                              1000, 100, 0.05)
+        OUTPUT_DIR = "./output/"
 
-        save_downscale = 0.2
-        print(f"Saving {len(images)} images...")
-        for i, img in tqdm.tqdm(enumerate(images), "Saving images..."):
-            imageio.imwrite(f"./{i}.png", cv2.resize(img, (0, 0), fx=save_downscale, fy=save_downscale))
+        widths: list[int] = [1000]
 
-        imageio.imwrite("./rest.png", cv2.resize(rest, (0, 0), fx=save_downscale, fy=save_downscale))
+        for wi in widths:
+            print("Starting slicing...")
+            images, rest = imageslicer.core.slice(raw,
+                                                  3000, 100, 0.05)
+
+            save_downscale = 1
+            print(f"Saving {len(images)} images...")
+            for i, img in tqdm.tqdm(enumerate(images), "Saving images..."):
+                imageio.imwrite(path.join(".", OUTPUT_DIR, f"{wi}px-{i}.jpg"), cv2.resize(img, (0, 0), fx=save_downscale, fy=save_downscale))
+
+            # imageio.imwrite("./rest.png", cv2.resize(rest, (0, 0), fx=save_downscale, fy=save_downscale))
 
         print("Done!")
 

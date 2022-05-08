@@ -1,10 +1,6 @@
-import imageio
 import numpy as np
 from scipy.ndimage.filters import convolve
-import matplotlib.pyplot as plt
-import matplotlib
 import cv2
-import logging
 
 def calculate_image_energy(image: np.ndarray) -> np.ndarray:
     filter_du = np.array([
@@ -53,18 +49,14 @@ def minimum_seam(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return M, backtrack
 
 def slice(real_img: np.ndarray, part_width: int, skip_step: int = 5, downscale_factor: float = 0.5) -> tuple[list[np.ndarray], np.ndarray]:
-    print("test")
     upscale_factor = 1.0 / downscale_factor
 
-    print("downscaling image by factor of {}".format(downscale_factor))
     img = cv2.resize(real_img, (0, 0), fx=downscale_factor, fy=downscale_factor)
     imgs: list[np.ndarray] = []
 
     iter = 0
 
-    print("Starting image slicing")
     while len(img) != 0 and len(img[0]) > part_width * downscale_factor:
-        print("Image slicing iteration:", iter, "reduced image width:", str(len(img[0])) + "px", f"(actual: {len(img[0]) * upscale_factor}px)")
         iter += 1
 
         r, c, _ = img.shape
@@ -102,13 +94,11 @@ def slice(real_img: np.ndarray, part_width: int, skip_step: int = 5, downscale_f
         if len(left_img) == 0 or len(left_img[0]) == 0 or len(left_img[0]) < part_width:
             img = img[0:, int(skip_step * downscale_factor):]
             real_img = real_img[0:, skip_step:]
-            print("Skipping part...")
             continue
 
 
         imgs.append(left_img[0:, :part_width])
         img = img[0:, int(part_width * downscale_factor):]
         real_img = real_img[0:, part_width:]
-        print("Added part...")
 
     return (imgs, real_img)
