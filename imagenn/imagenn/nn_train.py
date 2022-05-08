@@ -4,16 +4,18 @@ This is the main script for the neural network that will later generate the exte
 
 from __future__ import print_function
 
-import os
-import time
-
-import numpy
 import torch
 import torch.nn as nn
-import numpy as np
+import torch.utils.data
+import torch.nn.functional as F
+import torch.optim as optim
+
+from torchvision import transforms
+from torchvision import datasets
+
 import pickle as pkl
+
 from datetime import datetime
-from os import listdir
 
 
 # Just a small function to make the code more readable. Prints out a text with the format
@@ -31,37 +33,40 @@ def get_data(p: str):
     return array
 
 
-# Class for the NN; the magic happens here!
-class NN (nn.Module):
+# Constructor
+dtype = torch.float
 
-    # Constructor
-    def __init__(self):
-        self.dtype = torch.float
+# Determines the device to compute on
+try:
+    device = torch.device("cuda:0")
+    print_debug_text("CUDA found: using GPU for computing")
+except RuntimeError:
+    device = torch.device("cpu")
+    print_debug_text("No CUDA found: using CPU for computing")
 
-        # Determines the device to compute on
-        try:
-            self.device = torch.device("cuda:0")
-            print_debug_text("CUDA found: using GPU for computing")
-        except RuntimeError:
-            self.device = torch.device("cpu")
-            print_debug_text("No CUDA found: using CPU for computing")
+path = "../data/"
+batch_size = 64
 
-        # 3 Arrays:
-        # self.amount_values stores the amount of indexes of the np arrays
-        # self.train consists out of the (now shuffled) first 90% of temp
-        # self.test consists out of the last 10% of temp
-        path = "../data/"
-        self.temp = []
-        for file in os.listdir(path):
-            self.temp.append(get_data(f"{path}/{file}"))
+transform = transforms.Compose([transforms.Resize(1000), transforms.ToTensor])
 
-        np.random.shuffle(self.temp)
+image_data = datasets.ImageFolder(path, transform=transform)
 
-        self.train = self.temp[(len(self.temp)/9)*8:]
-        self.test = self.temp[:len(self.temp)/9]
-
-        del path
-        del self.temp
+train_loader = torch.utils.data.DataLoader(image_data, batch_size, shuffle=True)
 
 
+def scale(img, feature_range=(-1, 1)):
+    minimum, maximum = feature_range
+    img = img * (maximum-minimum) + minimum
+    return img
 
+
+def conv(in_channels, out_channels, kernel_size, stride=2, padding=1, batch_norm=True):
+    layers = []
+    conv_layer = nn.Conv2d(in_channels, out_channels, stride, padding, bias=False)
+
+    layers.append(conv_layer)
+
+    if batch_norm:
+        layers.append(nn.BatchNorm2d(out_channels))
+
+    return nn.Sequential(*layers)
