@@ -1,7 +1,9 @@
+import imageio
 import numpy as np
 from scipy.ndimage.filters import convolve
 import matplotlib.pyplot as plt
 import matplotlib
+import cv2
 
 def calculate_image_energy(image: np.ndarray) -> np.ndarray:
     filter_du = np.array([
@@ -49,13 +51,17 @@ def minimum_seam(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     return M, backtrack
 
-def slice(img: np.ndarray, part_width: int, skip_step: int = 5, randomness: int = 0) -> tuple[list[np.ndarray], np.ndarray]:
+def slice(real_img: np.ndarray, part_width: int, skip_step: int = 5, downscale_factor: float = 0.5) -> tuple[list[np.ndarray], np.ndarray]:
+    upscale_factor = 1.0 / downscale_factor
+
+    img = cv2.resize(real_img, (0, 0), fx=downscale_factor, fy=downscale_factor)
+
     imgs: list[np.ndarray] = []
 
     iter = 0
 
     while len(img) != 0 and len(img[0]) > part_width:
-        print("Iter:", iter, "image width:", str(len(img[0])) + "px")
+        print("Iter:", iter, "reduced image width:", str(len(img[0])) + "px", f"(actual: {len(img[0]) * upscale_factor}px)")
         iter += 1
 
         r, c, _ = img.shape
@@ -76,7 +82,7 @@ def slice(img: np.ndarray, part_width: int, skip_step: int = 5, randomness: int 
             mask[i, j] = False
             j = backtrack[i, j]
 
-        pos_max = 0
+        pos_min = np.infty
         for i in range(len(mask)):
 
             pos_false = 0
@@ -85,50 +91,18 @@ def slice(img: np.ndarray, part_width: int, skip_step: int = 5, randomness: int 
                     pos_false = j
                     break
 
-            if pos_false > pos_max:
-                pos_max = pos_false
+            if pos_false < pos_min:
+                pos_min = pos_false
 
-        mask = mask[0:, :pos_max]
+        left_img = real_img[0:, :int(pos_min * upscale_factor)]
 
-        for i in range(len(mask)):
-            was_false = False
-            for j in range(0, len(mask[i])):
-                if was_false:
-                    mask[i, j] = False
-                    continue
-
-                if not mask[i][j]:
-                    was_false = True
-                    continue
-
-        # region Visualization
-        """matplotlib.use("TkAgg")
-
-        fig = plt.figure(figsize=(6, 3.2))
-
-        ax = fig.add_subplot(111)
-        ax.set_title('colorMap')
-        plt.imshow(mask)
-        ax.set_aspect('equal')
-
-        cax = fig.add_axes([0.12, 0.1, 0.78, 0.8])
-        cax.get_xaxis().set_visible(False)
-        cax.get_yaxis().set_visible(False)
-        cax.patch.set_alpha(0)
-        cax.set_frame_on(False)
-        plt.colorbar(orientation='vertical')
-        plt.show()"""
-
-        # endregion
-
-        mask = np.stack([mask] * len(img[0][0]), axis=2)
-
-        left_img = np.where(np.invert(mask), 0, img[0:, :pos_max])
         if len(left_img) == 0 or len(left_img[0]) == 0 or len(left_img[0]) < part_width:
-            img = img[0:, skip_step:]
+            img = img[0:, int(skip_step * downscale_factor):]
+            real_img = real_img[0:, skip_step:]
             continue
 
         imgs.append(left_img[0:, :part_width])
-        img = img[0:, part_width:]
+        img = img[0:, int(part_width * downscale_factor):]
+        real_img = real_img[0:, part_width:]
 
-    return (imgs, img)
+    return (imgs, real_img)

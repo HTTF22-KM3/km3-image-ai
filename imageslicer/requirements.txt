@@ -3,3 +3,4 @@ numpy
 imageio
 matplotlib
 tqdm
+opencv-python
