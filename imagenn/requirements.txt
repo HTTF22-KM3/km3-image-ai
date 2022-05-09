@@ -1,4 +1,5 @@
 torch
 torchvision
-pickle
+pickle-mixin
 numpy
+datetime
