@@ -1,136 +1,102 @@
 """
-This is the main script for the neural network that will later generate the extension.
+This code is from the PyTorch documentation and adjusted to our needs
 """
 
-from __future__ import print_function
+from __future__ import print_function, division
 
+import argparse
+import os
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from IPython.display import HTML
 import torch
 import torch.nn as nn
-import torch.utils.data
-import torch.nn.functional as F
+import torch.nn.parallel
+import torch.backends.cudnn as cudnn
 import torch.optim as optim
-
-from torchvision import transforms
-from torchvision import datasets
-
-import pickle as pkl
-
-from datetime import datetime
+import torch.utils.data
+import torchvision.datasets as dset
+import torchvision.transforms as transforms
+import torchvision.utils as vutils
 
 
-# Just a small function to make the code more readable. Prints out a text with the format
-# Hour:Minute:Second.MillisecondMicrosecond | [file_name]: Text
-def print_debug_text(text: str):
-    print(f"{datetime.utcnow().hour}:{datetime.utcnow().minute}:{datetime.utcnow().second}."
-          f"{datetime.utcnow().microsecond} | [nn_train.py]: {text}")
-
-
-# Gets the data for the nn from a numpy array (Gets called in the NN-Class constructor)
-def get_data(p: str):
-    file = open(p, "r")
-    array = pkl.load(file)
-    file.close()
-    return array
-
-
-# Constructor
-dtype = torch.float
-
-# Determines the device to compute on
-try:
-    device = torch.device("cuda:0")
-    print_debug_text("CUDA found: using GPU for computing")
-except RuntimeError:
-    device = torch.device("cpu")
-    print_debug_text("No CUDA found: using CPU for computing")
-
-path = "../data/"
+# Initializing important variables
+# They are at the beginning of the script to make changes more easily
+data_root = "./data/"
+workers = 8
 batch_size = 64
+image_size = 64
 
-transform = transforms.Compose([transforms.Resize(1000), transforms.ToTensor])
+manualSeed = 999
+nc = 3
+nz = 100
+ngf = 64
+ndf = 64
+num_epochs = 5
 
-image_data = datasets.ImageFolder(path, transform=transform)
+lr = 0.0002
+beta1 = 0.5
+ngpu = 0
 
-train_loader = torch.utils.data.DataLoader(image_data, batch_size, shuffle=True)
+dataset = dset.ImageFolder(root=data_root, transform=transforms.Compose([
+    transforms.Resize(image_size),
+    transforms.CenterCrop(image_size),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+]))
 
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=workers)
 
-def scale(img, feature_range=(-1, 1)):
-    minimum, maximum = feature_range
-    img = img * (maximum-minimum) + minimum
-    return img
-
-
-def conv(in_channels, out_channels, kernel_size, stride=2, padding=1, batch_norm=True):
-    layers = []
-    conv_layer = nn.Conv2d(in_channels, out_channels, stride, padding, bias=False)
-
-    layers.append(conv_layer)
-
-    if batch_norm:
-        layers.append(nn.BatchNorm2d(out_channels))
-
-    return nn.Sequential(*layers)
-
-
-# TODO: Get behind the math of this algorithm
-# TODO: Read paper for Discriminative AI and Generative AI
-class Discriminator():
-    def __init__(self, conv_dim):
-        super(Discriminator, self).__init__()
-        self.conv_dim = conv_dim
-
-        self.cv1 = conv(3, self.conv_dim, 4, batch_norm=False)
-        self.cv2 = conv(self.conv_dim, self.conv_dim*2, 4, batch_norm=True)
-        self.cv3 = conv(self.conv_dim*2, self.conv_dim*4, batch_norm=True)
-        self.cv4 = conv(self.conv_dim * 4, self.conv_dim * 8, batch_norm=True)
-
-        self.fc1 = nn.Linear(self.conv_dim*8*2*2, 1)
-
-    def forward(self, x):
-        x = F.leaky_relu(self.cv1(x), 0.2)
-        x = F.leaky_relu(self.cv2(x), 0.2)
-        x = F.leaky_relu(self.cv3(x), 0.2)
-        x = F.leaky_relu(self.cv4(x), 0.2)
-
-        x = x.view(-1, self.conv_dim*8*2*2)
-        x = self.fc1(x)
-        return x
+if torch.cuda.is_available() and ngpu > 0:
+    device = torch.device("cuda:0")
+else:
+    device = torch.device("cpu")
 
 
-# Helper function for generative AI
-def deconv(in_channels, out_channels, kernel_size, stride = 2, padding = 1, batch_norm = True):
-    layers = []
-    convt_layer = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
-
-    layers.append(convt_layer)
-
-    if batch_norm:
-        layers.append(nn.BatchNorm2d(out_channels))
-
-    return nn.Sequential(*layers)
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
 
 
-class Generator(nn.Module):
-    def __init__(self, z_size, conv_dim):
-        super(Generator, self).__init__()
+class GenerativeAI(nn.Module):
+    def __init__(self, ngpu):
+        super(GenerativeAI, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(ngf * 8),
+            nn.RelU(True),
 
-        self.z_size = z_size
-        self.conv_dim = conv_dim
+            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 4),
+            nn.RelU(True),
 
-        # Declaring the fully connected layer
-        self.fc = nn.Linear(z_size, self.conv_dim*8*2*2)
-        self.dcv1 = deconv(self.conv_dim*8, self.conv_dim*4, 4, batch_norm=True)
-        self.dcv2 = deconv(self.conv_dim*4, self.conv_dim*2, 4, batch_norm=True)
-        self.dcv3 = deconv(self.conv_dim*2, self.conv_dim, 4, batch_norm=True)
-        self.dcv4 = deconv(self.conv_dim, 3, 4, batch_norm=False)
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 2),
+            nn.RelU(True),
 
-    def forward(self, x):
-        x = self.fc(x)
-        x = x.view(-1, self.conv_dim*8, 2, 2)
+            nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf),
+            nn.RelU(True),
 
-        x = F.relu(self.dcv1(x))
-        x = F.relu(self.dcv2(x))
-        x = F.relu(self.dcv3(x))
-        x = F.relu(self.dcv4(x))
+            nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
+            nn.Tanh()
+        )
 
-        return x
+        def forward(self, input):
+            return self.main(input)
+
+
+netG = GenerativeAI(ngpu).to(device)
+if (device.type == 'cuda') and (ngpu > 1):
+    netG = nn.DataParallel(netG, list(range(ngpu)))
+
+netG.apply(weights_init)
+
+print(netG)
