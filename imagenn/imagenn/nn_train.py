@@ -1,5 +1,5 @@
 from __future__ import print_function
-# %matplotlib inline
+#%matplotlib inline
 import argparse
 import os
 import random
@@ -16,31 +16,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from IPython.display import HTML
-from tqdm import tqdm
-from PIL import Image as im
 
 manualSeed = 999
-# manualSeed = random.randint(1, 10000) # use if you want new results
+#manualSeed = random.randint(1, 10000) # use if you want new results
+print("Random Seed: ", manualSeed)
 random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 
-dataroot = "/home/merlinroser/km3-image-ai/out"
+dataroot = "X:/Datasets/archive/img_align_celeba"
 
-workers = 16
+workers = 2
 
-batch_size = 94
+batch_size = 128
 
 image_size = 64
 
 nc = 3
 
-nz = 200
+nz = 100
 
 ngf = 64
 
 ndf = 64
 
-num_epochs = 1000
+num_epochs = 5
 
 lr = 0.0002
 
@@ -63,10 +62,9 @@ device = torch.device("cuda:0" if (torch.cuda.is_available() and ngpu > 0) else 
 
 # Plot some training images
 real_batch = next(iter(dataloader))
-plt.figure(figsize=(8, 8))
+plt.figure(figsize=(8,8))
 plt.axis("off")
 plt.title("Training Images")
-
 
 # custom weights initialization called on netG and netD
 def weights_init(m):
@@ -77,7 +75,6 @@ def weights_init(m):
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
 
-
 # Generator
 
 class Generator(nn.Module):
@@ -86,7 +83,7 @@ class Generator(nn.Module):
         self.ngpu = ngpu
         self.main = nn.Sequential(
             # input is Z, going into a convolution
-            nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.ConvTranspose2d( nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf * 8),
             nn.ReLU(True),
             # state size. (ngf*8) x 4 x 4
@@ -94,22 +91,21 @@ class Generator(nn.Module):
             nn.BatchNorm2d(ngf * 4),
             nn.ReLU(True),
             # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d( ngf * 4, ngf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf * 2),
             nn.ReLU(True),
             # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d( ngf * 2, ngf, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf),
             nn.ReLU(True),
             # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False),
             nn.Tanh()
             # state size. (nc) x 64 x 64
         )
 
     def forward(self, input):
         return self.main(input)
-
 
 netG = Generator(ngpu).to(device)
 
@@ -120,6 +116,8 @@ if (device.type == 'cuda') and (ngpu > 1):
 #  to mean=0, stdev=0.02.
 netG.apply(weights_init)
 
+# Print the model
+print(netG)
 
 class Discriminator(nn.Module):
     def __init__(self, ngpu):
@@ -149,7 +147,6 @@ class Discriminator(nn.Module):
     def forward(self, input):
         return self.main(input)
 
-
 # Create the Discriminator
 netD = Discriminator(ngpu).to(device)
 
@@ -160,6 +157,9 @@ if (device.type == 'cuda') and (ngpu > 1):
 # Apply the weights_init function to randomly initialize all weights
 #  to mean=0, stdev=0.2.
 netD.apply(weights_init)
+
+# Print the model
+print(netD)
 
 # Initialize BCELoss function
 criterion = nn.BCELoss()
@@ -190,19 +190,18 @@ for epoch in range(num_epochs):
     # For each batch in the dataloader
     for i, data in enumerate(dataloader, 0):
 
+        ############################
+        # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+        ###########################
+        ## Train with all-real batch
         netD.zero_grad()
         # Format batch
-
         real_cpu = data[0].to(device)
-
         b_size = real_cpu.size(0)
-
         label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
         # Forward pass real batch through D
-
         output = netD(real_cpu).view(-1)
         # Calculate loss on all-real batch
-
         errD_real = criterion(output, label)
         # Calculate gradients for D in backward pass
         errD_real.backward()
@@ -224,9 +223,11 @@ for epoch in range(num_epochs):
         # Compute error of D as sum over the fake and the real batches
         errD = errD_real + errD_fake
         # Update D
-        if epoch % 2 == 0:
-            optimizerD.step()
+        optimizerD.step()
 
+        ############################
+        # (2) Update G network: maximize log(D(G(z)))
+        ###########################
         netG.zero_grad()
         label.fill_(real_label)  # fake labels are real for generator cost
         # Since we just updated D, perform another forward pass of all-fake batch through D
@@ -237,8 +238,7 @@ for epoch in range(num_epochs):
         errG.backward()
         D_G_z2 = output.mean().item()
         # Update G
-        if epoch % 3 == 0:
-            optimizerG.step()
+        optimizerG.step()
 
         # Output training stats
         if i % 50 == 0:
@@ -251,45 +251,27 @@ for epoch in range(num_epochs):
         D_losses.append(errD.item())
 
         # Check how the generator is doing by saving G's output on fixed_noise
-        if (iters % 500 == 0) or ((epoch == num_epochs - 1) and (i == len(dataloader) - 1)):
+        if (iters % 500 == 0) or ((epoch == num_epochs-1) and (i == len(dataloader)-1)):
             with torch.no_grad():
                 fake = netG(fixed_noise).detach().cpu()
             img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
 
         iters += 1
 
-    torch.save(netG, "netg" + str(epoch) + ".pt")
-    torch.save(netD, "netd" + str(epoch) + ".pt")
-
-plt.figure(figsize=(10, 5))
+plt.figure(figsize=(10,5))
 plt.title("Generator and Discriminator Loss During Training")
-plt.plot(G_losses, label="G")
-plt.plot(D_losses, label="D")
+plt.plot(G_losses,label="G")
+plt.plot(D_losses,label="D")
 plt.xlabel("iterations")
 plt.ylabel("Loss")
 plt.legend()
 plt.show()
 
-fig = plt.figure(figsize=(8, 8))
+#%%capture
+fig = plt.figure(figsize=(8,8))
 plt.axis("off")
-ims = [[plt.imshow(np.transpose(i, (1, 2, 0)), animated=True)] for i in img_list]
+ims = [[plt.imshow(np.transpose(i,(1,2,0)), animated=True)] for i in img_list]
 ani = animation.ArtistAnimation(fig, ims, interval=1000, repeat_delay=1000, blit=True)
 
 HTML(ani.to_jshtml())
 
-# Grab a batch of real images from the dataloader
-real_batch = next(iter(dataloader))
-
-# Plot the real images
-plt.figure(figsize=(15, 15))
-plt.subplot(1, 2, 1)
-plt.axis("off")
-plt.title("Real Images")
-plt.imshow(np.transpose(vutils.make_grid(real_batch[0].to(device)[:64], padding=5, normalize=True).cpu(), (1, 2, 0)))
-
-# Plot the fake images from the last epoch
-plt.subplot(1, 2, 2)
-plt.axis("off")
-plt.title("Fake Images")
-plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
-plt.show()
