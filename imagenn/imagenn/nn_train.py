@@ -40,7 +40,7 @@ ngf = 64
 
 ndf = 64
 
-num_epochs = 1000
+num_epochs = 10000
 
 lr = 0.0002
 
@@ -184,6 +184,18 @@ G_losses = []
 D_losses = []
 iters = 0
 
+files_in_folder = 0
+
+for base, dirs, files in os.walk("/home/merlinroser/km3-image-ai/imagenn/imagenn/models"):
+    files_in_folder += 1
+
+if files_in_folder != 1:
+    netG = torch.load(
+        "/home/merlinroser/km3-image-ai/imagenn/imagenn/models/netg" + str(files_in_folder / 2) + ".pt").to(device)
+    netG.eval()
+    netD = torch.load("/home/merlinroser/km3-image-ai/imagenn/imagenn/models/netd" + str(files_in_folder / 2) + ".pt")
+    netD.eval()
+
 print("Starting Training Loop...")
 # For each epoch
 for epoch in range(num_epochs):
@@ -258,7 +270,8 @@ for epoch in range(num_epochs):
 
         iters += 1
 
-    torch.save(netG, "netg" + str(epoch) + ".pt")
+    torch.save(netG, "/home/merlinroser/km3-image-ai/imagenn/imagenn/models/netg" + str(epoch + 1) + ".pt")
+    torch.save(netD, "/home/merlinroser/km3-image-ai/imagenn/imagenn/models/netd" + str(epoch + 1) + ".pt")
 
 plt.figure(figsize=(10, 5))
 plt.title("Generator and Discriminator Loss During Training")
